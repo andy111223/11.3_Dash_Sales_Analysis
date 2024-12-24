@@ -253,6 +253,118 @@ def tab2_barh_prod_subcat(chosen_cat):
     )
     return fig
 
+## Tab-3 callbacks
+
+# 1) Callback for the day-of-week sales bar chart
+@app.callback(
+    Output('weekday-sales', 'figure'),
+    [
+        Input('storetype-date-range','start_date'),
+        Input('storetype-date-range','end_date')
+    ]
+)
+def tab3_weekday_sales(start_date, end_date):
+    """
+    Filters df.merged by the chosen date range 
+    and shows day-of-week store-type sales.
+    """
+
+    if not start_date:
+        start_date = df.merged['tran_date'].min()
+    if not end_date:
+        end_date = df.merged['tran_date'].max()
+
+    truncated = df.merged[
+        (df.merged['tran_date'] >= start_date) & 
+        (df.merged['tran_date'] <= end_date)
+    ].copy()
+
+    truncated['day_of_week'] = truncated['tran_date'].dt.day_name()
+
+    grouped = (
+        truncated
+        .groupby(['day_of_week', 'Store_type'])['total_amt']
+        .sum()
+        .reset_index()
+    )
+
+    ordered_days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+    grouped['day_of_week'] = pd.Categorical(grouped['day_of_week'], categories=ordered_days, ordered=True)
+    grouped.sort_values('day_of_week', inplace=True)
+
+    traces = []
+    for store_type in grouped['Store_type'].unique():
+        store_data = grouped[grouped['Store_type'] == store_type]
+        traces.append(
+            go.Bar(
+                x=store_data['day_of_week'],
+                y=store_data['total_amt'],
+                name=store_type
+            )
+        )
+
+    fig = go.Figure(data=traces)
+    fig.update_layout(
+        barmode='group',
+        title='Sales by Day of Week (Store Type)',
+        xaxis_title='Day of Week',
+        yaxis_title='Total Sales'
+    )
+
+    return fig
+
+
+@app.callback(
+    [
+        Output('storetype-gender-dist', 'figure'),
+        Output('storetype-country-dist', 'figure'),
+        Output('storetype-kpi', 'children')
+    ],
+    [
+        Input('storetype-dropdown', 'value')
+    ]
+)
+def tab3_storetype_insights(chosen_storetype):
+    """
+    Filters df.merged by chosen store type 
+    and shows gender distribution, country distribution, 
+    and a KPI (avg spending per customer).
+    """
+
+    filtered = df.merged[df.merged['Store_type'] == chosen_storetype]
+
+    gender_counts = filtered.groupby('Gender')['cust_id'].nunique()
+    gender_fig = go.Figure(
+        data=[go.Pie(labels=gender_counts.index, values=gender_counts.values)],
+        layout=go.Layout(title=f'Gender Distribution: {chosen_storetype}')
+    )
+
+    country_counts = (
+        filtered
+        .groupby('country')['cust_id']
+        .nunique()
+        .sort_values(ascending=False)
+        .head(10)
+    )
+    country_fig = go.Figure(
+        data=[go.Bar(
+            x=country_counts.values, 
+            y=country_counts.index, 
+            orientation='h'
+        )],
+        layout=go.Layout(title=f'Top Countries: {chosen_storetype}')
+    )
+
+    per_customer_spending = filtered.groupby('cust_id')['total_amt'].sum()
+    if not per_customer_spending.empty:
+        avg_spending = per_customer_spending.mean()
+        kpi_text = f"Avg Spending per Customer in {chosen_storetype}: {avg_spending:.2f}"
+    else:
+        kpi_text = f"No data for store type: {chosen_storetype}"
+
+    return (gender_fig, country_fig, kpi_text)
+
+
 # Run the app
 if __name__ == '__main__':
     app.run_server()
